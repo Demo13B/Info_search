@@ -1,0 +1,2 @@
+Total number of words: 129013
+Average word length: 8.5759

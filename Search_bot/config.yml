@@ -1,0 +1,13 @@
+mongo:
+  url: 'mongodb://admin:bamboo@demo13b.ddnsfree.com:21000'
+  db_name: 'f1crawler'
+  collection_name: 'documents'
+
+redis:
+  url: 'redis://:DogeCoin@demo13b.ddnsfree.com:20000'
+
+mode: update
+
+sources:
+  - /Users/timursalihov/Inf_search/Link_gatherer/motorsport_urls.json
+  - /Users/timursalihov/Inf_search/Link_gatherer/the_race_urls.json
