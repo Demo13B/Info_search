@@ -16,7 +16,7 @@ TEST(IndexerTest, AddMultipleDocs) {
     idx.add_doc("running", "doc2");
     idx.add_doc("running", "doc2");
 
-    auto docs = idx["running"];
+    auto docs = idx["run"];
     ASSERT_EQ(docs.size(), 2);
     EXPECT_EQ(docs[0], "doc1");
     EXPECT_EQ(docs[1], "doc2");
