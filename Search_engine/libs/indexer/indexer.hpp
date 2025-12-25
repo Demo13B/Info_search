@@ -33,4 +33,5 @@ class Indexer {
     friend class IndexerTest_AddSingleToken_Test;
     friend class IndexerTest_AddMultipleDocs_Test;
     friend class IndexerTest_FindTokenBinWorks_Test;
+    friend class IndexerTest_Lemmatize_Test;
 };

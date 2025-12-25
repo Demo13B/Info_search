@@ -22,6 +22,18 @@ TEST(IndexerTest, AddMultipleDocs) {
     EXPECT_EQ(docs[1], "doc2");
 }
 
+TEST(IndexerTest, Lemmatize) {
+    Indexer idx;
+    idx.add_doc("leaves", "doc1");
+    idx.add_doc("leaves", "doc2");
+    idx.add_doc("leaves", "doc2");
+
+    auto docs = idx["leaf"];
+    ASSERT_EQ(docs.size(), 2);
+    EXPECT_EQ(docs[0], "doc1");
+    EXPECT_EQ(docs[1], "doc2");
+}
+
 TEST(IndexerTest, FindTokenBinWorks) {
     Indexer idx;
     idx.add_doc("apple", "doc1");

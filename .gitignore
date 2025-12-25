@@ -1,5 +1,5 @@
 build
 node_modules
-index.bin
+*.bin
 tf-idf_index.gz
 .DS_Store

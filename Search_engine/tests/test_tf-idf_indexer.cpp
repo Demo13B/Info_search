@@ -60,7 +60,7 @@ TEST(TF_IDF_IndexerTest, SaveLoadIndex) {
     idx.save_index(filename);
 
     TF_IDF_Indexer idx2;
-    idx2.load_index(filename);
+    idx2.load_index(filename, false);
 
     EXPECT_EQ(idx.size(), idx2.size());
 
@@ -143,6 +143,24 @@ TEST(TF_IDF_IndexerTest, SortTFWorks) {
 
     EXPECT_EQ(docs_after[2].doc_id, "doc3");
     EXPECT_EQ(docs_after[2].count, 1);
+}
+
+TEST(TF_IDF_IndexerTest, Compression) {
+    TF_IDF_Indexer idx;
+    idx.add_doc("running", "doc1");
+    idx.add_doc("running", "doc2");
+    idx.add_doc("running", "doc2");
+
+    idx.compress();
+
+    auto docs = idx["run"];
+    ASSERT_EQ(docs.size(), 2);
+
+    EXPECT_EQ(docs[0].doc_id, "doc1");
+    EXPECT_EQ(docs[0].count, 1);
+
+    EXPECT_EQ(docs[1].doc_id, "doc2");
+    EXPECT_EQ(docs[1].count, 2);
 }
 
 int main(int argc, char** argv) {

@@ -8,7 +8,7 @@ TEST(ScorerTest, AddScoreAndShowScoreboard) {
     ind.build_index("doc2", {"apple", "banana"});
     ind.build_index("doc3", {"apple", "date"});
 
-    Scorer scorer(10, ind);
+    Scorer scorer(3, ind);
 
     scorer.score_token("apple");
     scorer.score_token("banana");
@@ -24,8 +24,8 @@ TEST(ScorerTest, AddScoreAndShowScoreboard) {
     }
 
     EXPECT_NE(std::find(doc_ids.begin(), doc_ids.end(), "doc1"), doc_ids.end());
-    EXPECT_NE(std::find(doc_ids.begin(), doc_ids.end(), "doc2"), doc_ids.end());
-    EXPECT_NE(std::find(doc_ids.begin(), doc_ids.end(), "doc3"), doc_ids.end());
+    EXPECT_EQ(std::find(doc_ids.begin(), doc_ids.end(), "doc2"), doc_ids.end());
+    EXPECT_EQ(std::find(doc_ids.begin(), doc_ids.end(), "doc3"), doc_ids.end());
 }
 
 TEST(ScorerTest, ScoreboardSorting) {

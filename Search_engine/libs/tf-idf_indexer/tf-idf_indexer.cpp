@@ -31,18 +31,40 @@ long TF_IDF_Indexer::find_token(const std::string& token) {
 }
 
 long TF_IDF_Indexer::find_token_bin(const std::string& token) {
-    if (!sorted) {
-        sort_index();
+    if (!compressed) {
+        if (!sorted) {
+            sort_index();
+        }
+
+        std::string lemma = lemmatize(token);
+
+        long left = 0;
+        long right = static_cast<long>(index.size()) - 1;
+
+        while (left <= right) {
+            long mid = left + (right - left) / 2;
+            const std::string& mid_lemma = index[mid].lemma;
+
+            if (mid_lemma == lemma) {
+                return mid;
+            } else if (mid_lemma < lemma) {
+                left = mid + 1;
+            } else {
+                right = mid - 1;
+            }
+        }
+
+        return -1;
     }
 
     std::string lemma = lemmatize(token);
 
     long left = 0;
-    long right = static_cast<long>(index.size()) - 1;
+    long right = static_cast<long>(index_compressed.size()) - 1;
 
     while (left <= right) {
         long mid = left + (right - left) / 2;
-        const std::string& mid_lemma = index[mid].lemma;
+        const std::string& mid_lemma = index_compressed[mid].lemma;
 
         if (mid_lemma == lemma) {
             return mid;
@@ -84,15 +106,19 @@ void TF_IDF_Indexer::add_doc(const std::string& token, const std::string& doc_id
     sorted = false;
 }
 
-const std::vector<TF>& TF_IDF_Indexer::operator[](const std::string& token) {
+std::vector<TF> TF_IDF_Indexer::operator[](const std::string& token) {
     long pos = find_token_bin(token);
 
-    static const std::vector<TF> empty;
+    std::vector<TF> res;
 
     if (pos == -1)
-        return empty;
+        return res;
 
-    return index[pos].doc_ids;
+    if (!compressed)
+        return index[pos].doc_ids;
+
+    decompress_posting(index_compressed[pos], res);
+    return res;
 }
 
 void TF_IDF_Indexer::build_index(const std::string& doc_id, const std::vector<std::string>& tokens) {
@@ -111,60 +137,118 @@ void TF_IDF_Indexer::sort_index() {
 
 void TF_IDF_Indexer::save_index(const std::string& filename) {
     std::ofstream out(filename, std::ios::binary);
-    size_t n = index.size();
-    out.write(reinterpret_cast<const char*>(&n), sizeof(n));
 
-    for (const auto& node : index) {
+    if (!compressed) {
+        size_t n = index.size();
+        out.write(reinterpret_cast<const char*>(&n), sizeof(n));
+
+        for (const auto& node : index) {
+            size_t lemma_len = node.lemma.size();
+            out.write(reinterpret_cast<const char*>(&lemma_len), sizeof(lemma_len));
+            out.write(node.lemma.data(), lemma_len);
+
+            size_t doc_count = node.doc_ids.size();
+            out.write(reinterpret_cast<const char*>(&doc_count), sizeof(doc_count));
+
+            for (const auto& id : node.doc_ids) {
+                size_t id_doc_id_len = id.doc_id.size();
+                out.write(reinterpret_cast<const char*>(&id_doc_id_len), sizeof(id_doc_id_len));
+                out.write(id.doc_id.data(), id_doc_id_len);
+
+                size_t id_count = id.count;
+                out.write(reinterpret_cast<const char*>(&id_count), sizeof(id_count));
+            }
+        }
+
+        return;
+    }
+
+    size_t n = ids.size();
+    out.write(reinterpret_cast<const char*>(&n), sizeof(n));
+    for (const auto& id : ids) {
+        size_t id_len = id.size();
+        out.write(reinterpret_cast<const char*>(&id_len), sizeof(id_len));
+        out.write(id.data(), id_len);
+    }
+
+    n = index_compressed.size();
+    out.write(reinterpret_cast<const char*>(&n), sizeof(n));
+    for (const auto& node : index_compressed) {
         size_t lemma_len = node.lemma.size();
         out.write(reinterpret_cast<const char*>(&lemma_len), sizeof(lemma_len));
         out.write(node.lemma.data(), lemma_len);
 
-        size_t doc_count = node.doc_ids.size();
-        out.write(reinterpret_cast<const char*>(&doc_count), sizeof(doc_count));
-
-        for (const auto& id : node.doc_ids) {
-            size_t id_doc_id_len = id.doc_id.size();
-            out.write(reinterpret_cast<const char*>(&id_doc_id_len), sizeof(id_doc_id_len));
-            out.write(id.doc_id.data(), id_doc_id_len);
-
-            size_t id_count = id.count;
-            out.write(reinterpret_cast<const char*>(&id_count), sizeof(id_count));
-        }
+        size_t postings_len = node.postings.size();
+        out.write(reinterpret_cast<const char*>(&postings_len), sizeof(postings_len));
+        out.write(reinterpret_cast<const char*>(node.postings.data()), postings_len);
     }
 }
 
-void TF_IDF_Indexer::load_index(const std::string& filename) {
+void TF_IDF_Indexer::load_index(const std::string& filename, bool is_compressed) {
     std::ifstream in(filename, std::ios::binary);
+
+    compressed = is_compressed;
+
+    if (!compressed) {
+        size_t n;
+        in.read(reinterpret_cast<char*>(&n), sizeof(n));
+        index.resize(n);
+
+        for (size_t i = 0; i < n; ++i) {
+            size_t lemma_len;
+            in.read(reinterpret_cast<char*>(&lemma_len), sizeof(lemma_len));
+            index[i].lemma.resize(lemma_len);
+            in.read(index[i].lemma.data(), lemma_len);
+
+            size_t doc_count;
+            in.read(reinterpret_cast<char*>(&doc_count), sizeof(doc_count));
+            index[i].doc_ids.resize(doc_count);
+
+            for (size_t j = 0; j < doc_count; ++j) {
+                size_t id_doc_id_len;
+                in.read(reinterpret_cast<char*>(&id_doc_id_len), sizeof(id_doc_id_len));
+                index[i].doc_ids[j].doc_id.resize(id_doc_id_len);
+                in.read(index[i].doc_ids[j].doc_id.data(), id_doc_id_len);
+
+                size_t id_count;
+                in.read(reinterpret_cast<char*>(&id_count), sizeof(id_count));
+                index[i].doc_ids[j].count = id_count;
+            }
+        }
+
+        return;
+    }
 
     size_t n;
     in.read(reinterpret_cast<char*>(&n), sizeof(n));
-    index.resize(n);
+    ids.resize(n);
+    for (size_t i = 0; i < n; ++i) {
+        size_t id_len;
+        in.read(reinterpret_cast<char*>(&id_len), sizeof(id_len));
+        ids[i].resize(id_len);
+        in.read(ids[i].data(), id_len);
+    }
 
+    in.read(reinterpret_cast<char*>(&n), sizeof(n));
+    index_compressed.resize(n);
     for (size_t i = 0; i < n; ++i) {
         size_t lemma_len;
         in.read(reinterpret_cast<char*>(&lemma_len), sizeof(lemma_len));
-        index[i].lemma.resize(lemma_len);
-        in.read(index[i].lemma.data(), lemma_len);
+        index_compressed[i].lemma.resize(lemma_len);
+        in.read(index_compressed[i].lemma.data(), lemma_len);
 
-        size_t doc_count;
-        in.read(reinterpret_cast<char*>(&doc_count), sizeof(doc_count));
-        index[i].doc_ids.resize(doc_count);
-
-        for (size_t j = 0; j < doc_count; ++j) {
-            size_t id_doc_id_len;
-            in.read(reinterpret_cast<char*>(&id_doc_id_len), sizeof(id_doc_id_len));
-            index[i].doc_ids[j].doc_id.resize(id_doc_id_len);
-            in.read(index[i].doc_ids[j].doc_id.data(), id_doc_id_len);
-
-            size_t id_count;
-            in.read(reinterpret_cast<char*>(&id_count), sizeof(id_count));
-            index[i].doc_ids[j].count = id_count;
-        }
+        size_t postings_len;
+        in.read(reinterpret_cast<char*>(&postings_len), sizeof(postings_len));
+        index_compressed[i].postings.resize(postings_len);
+        in.read(reinterpret_cast<char*>(index_compressed[i].postings.data()), postings_len);
     }
 }
 
 size_t TF_IDF_Indexer::size() {
-    return index.size();
+    if (!compressed) {
+        return index.size();
+    }
+    return index_compressed.size();
 }
 
 void TF_IDF_Indexer::compress_file(const std::string& input, const ::std::string& output) {
@@ -273,4 +357,71 @@ void TF_IDF_Indexer::sort_tf() {
             return a.count > b.count;
         });
     }
+}
+
+void TF_IDF_Indexer::encode_vb(size_t x, std::vector<uint8_t>& out) {
+    while (x >= 128) {
+        out.push_back(x & 0x7F);
+        x >>= 7;
+    }
+    out.push_back(x | 0x80);
+}
+
+size_t TF_IDF_Indexer::decode_vb(const std::vector<uint8_t>& in, size_t& pos) {
+    size_t x = 0, shift = 0;
+    while (pos < in.size()) {
+        uint8_t b = in[pos++];
+        x |= (b & 0x7F) << shift;
+        if (b & 0x80) {
+            break;
+        }
+        shift += 7;
+    }
+    return x;
+}
+
+long TF_IDF_Indexer::find_mongo_id(const std::string& mongo_id) {
+    for (size_t i = 0; i != ids.size(); ++i) {
+        if (ids[i] == mongo_id)
+            return i;
+    }
+    return -1;
+}
+
+void TF_IDF_Indexer::decompress_posting(const Node_Compressed& node, std::vector<TF>& res) {
+    size_t pos = 0;
+    while (pos < node.postings.size()) {
+        size_t norm_id = decode_vb(node.postings, pos);
+        TF tf;
+        tf.doc_id = ids[norm_id];
+        tf.count = decode_vb(node.postings, pos);
+        res.push_back(tf);
+    }
+}
+
+void TF_IDF_Indexer::compress() {
+    if (!sorted) {
+        sort_index();
+    }
+
+    size_t counter = 1;
+    for (auto& term : index) {
+        std::cout << "Compressing term: " << counter++ << "\n";
+        Node_Compressed n;
+        n.lemma = term.lemma;
+        for (auto& doc_id : term.doc_ids) {
+            long mongo_pos = find_mongo_id(doc_id.doc_id);
+            size_t norm_id = static_cast<size_t>(mongo_pos);
+            if (mongo_pos == -1) {
+                ids.push_back(doc_id.doc_id);
+                norm_id = ids.size() - 1;
+            }
+            encode_vb(norm_id, n.postings);
+            encode_vb(doc_id.count, n.postings);
+        }
+        index_compressed.push_back(n);
+    }
+
+    index.resize(0);
+    compressed = true;
 }

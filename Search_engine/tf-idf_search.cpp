@@ -10,7 +10,7 @@
 
 int main() {
     auto id = TF_IDF_Indexer();
-    id.load_index_compressed("/Users/timursalihov/Inf_search/Search_engine/tf-idf_index.gz");
+    id.load_index("/Users/timursalihov/Inf_search/Search_engine/tf-idf_index_compressed.bin", true);
 
     auto db = DB("mongodb://admin:bamboo@demo13b.ddnsfree.com:21000");
 
